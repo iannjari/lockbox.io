@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<body>
+    <h1>{{.Name}}</h1>
+    <img width="100" src="{{.Logo}}" />
+    <p> An application, {{.Website}}, is requesting access to your account.
+        
+        Allow access?
+    </p>
+    <form action="confirm_auth">
+        <button type="submit" name="authorize" value="true">Authorize</button>
+        <button type="submit" name="authorize" value="false">Deny</button>
+        <input type="hidden" name="client_id" value="{{.Name}}"/>
+    </form>
+
+</body>
+</html>
