@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -35,6 +39,25 @@ func main() {
 		Logo:        "https://en.wikipedia.org/wiki/File:Logo_sample.png",
 		RedirectURI: "http://localhost:8000/auth/callback",
 	})
+
+	api := fiber.New(fiber.Config{
+		AppName: "lockbox.io",
+	})
+
+	// middleware
+	api.Use(logger.New())
+	api.Use(recover.New())
+
+	api.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("hello 💙")
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		panic("empty port!")
+	}
+
+	api.Listen(fmt.Sprintf(":%s", port))
 
 }
 
