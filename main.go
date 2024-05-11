@@ -76,6 +76,9 @@ func main() {
 		if authRequest.Scope == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "inavlid scope"})
 		}
+		if authRequest.State == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "inavlid state"})
+		}
 
 		// verify client exists
 		client := new(Client)
@@ -90,7 +93,7 @@ func main() {
 		}
 
 		c.Cookie(&fiber.Cookie{
-			Name:     "auth_request_code",
+			Name:     "temp_auth_request_code",
 			Value:    code,
 			Secure:   true,
 			Expires:  time.Now().Add(2 * time.Minute),
@@ -101,9 +104,34 @@ func main() {
 			"Logo":    client.Logo,
 			"Name":    client.Name,
 			"Website": client.Website,
+			"State":   authRequest.State,
 			"Scopes":  strings.Split(authRequest.Scope, " "),
 		})
 
+	})
+
+	api.Get("/confirm_auth", func(c *fiber.Ctx) error {
+		tempCode := c.Cookies("temp_auth_request_code")
+		if tempCode == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid temp auth code"})
+		}
+
+		authConfirmReq := new(ConfirmAuthRequest)
+		if c.QueryParser(authConfirmReq); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+
+		// verify client exists
+		client := new(Client)
+		if err := db.Where("name = ?", authConfirmReq.ClientID).First(&client).Error; err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "unknown client"})
+		}
+
+		if !authConfirmReq.Authorize {
+			return c.Redirect(client.RedirectURI + "?error=access_denied" + "&state=" + authConfirmReq.State)
+		}
+
+		return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
 	})
 
 	port := os.Getenv("PORT")
@@ -111,7 +139,7 @@ func main() {
 		panic("empty port!")
 	}
 
-	api.Listen(fmt.Sprintf(":%s", port))
+	api.Listen(fmt.Sprintf("localhost:%s", port))
 
 }
 
@@ -132,4 +160,10 @@ type AuthRequest struct {
 	RedirectURI  string `json:"redirect_uri" query:"redirect_uri"`
 	Scope        string
 	State        string
+}
+
+type ConfirmAuthRequest struct {
+	Authorize bool   `json:"authorize" query:"authorize"`
+	ClientID  string `json:"client_id" query:"client_id"`
+	State     string
 }
