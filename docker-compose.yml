@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  auth-db:
+    image: postgres:14-alpine
+    container_name: auth-db
+    ports:
+      - "5432:5433"  
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTRES_DB=lockbox-auth
+      - POSTGRES_PASSWORD=kittykat
