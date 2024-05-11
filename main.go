@@ -101,6 +101,7 @@ func main() {
 			"Logo":    client.Logo,
 			"Name":    client.Name,
 			"Website": client.Website,
+			"Scopes":  strings.Split(authRequest.Scope, " "),
 		})
 
 	})

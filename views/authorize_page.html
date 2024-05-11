@@ -2,8 +2,17 @@
 <body>
     <h1>{{.Name}}</h1>
     <img width="100" src="{{.Logo}}" />
-    <p> An application, {{.Website}}, is requesting access to your account.
-        
+    <p> An application, {{.Website}}, is requesting access to your account with the following scopes:
+
+    </p>
+    <ul>
+        {{range $scope := .Scopes}}
+        <li>
+            {{$scope}}
+        </li>
+        {{end}}
+    </ul>
+    <p>
         Allow access?
     </p>
     <form action="confirm_auth">
