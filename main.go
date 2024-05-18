@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/template/html/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
 	"github.com/lucsky/cuid"
 	"gorm.io/driver/postgres"
@@ -32,16 +35,23 @@ func main() {
 
 	db.AutoMigrate(&Client{})
 
+	// generate code
+	clientSecret, err := cuid.NewCrypto(rand.Reader)
+	if err != nil {
+		panic("internal server error generating example client id")
+	}
+
 	// seed with dummy data
 	db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "website", "redirect_uri", "logo"}),
+		DoUpdates: clause.AssignmentColumns([]string{"name", "website", "redirect_uri", "logo", "client_secret"}),
 	}).Create(&Client{
-		ID:          "1",
-		Name:        "client_1",
-		Website:     "https://example.com",
-		Logo:        "https://1000logos.net/wp-content/uploads/2016/11/New-Google-Logo.jpg",
-		RedirectURI: "http://localhost:8000/auth/callback",
+		ID:           "1",
+		Name:         "client_1",
+		Website:      "https://example.com",
+		Logo:         "https://1000logos.net/wp-content/uploads/2016/11/New-Google-Logo.jpg",
+		RedirectURI:  "http://localhost:8000/auth/callback",
+		ClientSecret: clientSecret,
 	})
 
 	views := html.New("./views", ".html")
@@ -71,13 +81,13 @@ func main() {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid redirect uri"})
 		}
 		if authRequest.ClientID == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "inavlid client id"})
+			return c.Status(400).JSON(fiber.Map{"error": "invalid client id"})
 		}
 		if authRequest.Scope == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "inavlid scope"})
+			return c.Status(400).JSON(fiber.Map{"error": "invalid scope"})
 		}
 		if authRequest.State == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "inavlid state"})
+			return c.Status(400).JSON(fiber.Map{"error": "invalid state"})
 		}
 
 		// verify client exists
@@ -115,6 +125,7 @@ func main() {
 		if tempCode == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid temp auth code"})
 		}
+		c.ClearCookie("temp_auth_request_code")
 
 		authConfirmReq := new(ConfirmAuthRequest)
 		if c.QueryParser(authConfirmReq); err != nil {
@@ -124,14 +135,77 @@ func main() {
 		// verify client exists
 		client := new(Client)
 		if err := db.Where("name = ?", authConfirmReq.ClientID).First(&client).Error; err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "unknown client"})
+			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
 		}
 
 		if !authConfirmReq.Authorize {
 			return c.Redirect(client.RedirectURI + "?error=access_denied" + "&state=" + authConfirmReq.State)
 		}
 
+		// save generated auth code
+		db.Model(&client).Update("code", tempCode)
+
 		return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
+	})
+
+	api.Get("/token", func(c *fiber.Ctx) error {
+		tokenReq := new(TokenRequest)
+		if c.BodyParser(tokenReq); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+
+		if !strings.Contains(tokenReq.RedirectURI, "https://") {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid redirect uri"})
+		}
+		if tokenReq.ClientID == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid client id"})
+		}
+		if tokenReq.ClientSecret == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid client secret"})
+		}
+		if tokenReq.GrantType == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid grant type"})
+		}
+		if tokenReq.Code == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid code"})
+		}
+
+		// verify client exists
+		client := new(Client)
+		if err := db.Where("name = ?", tokenReq.ClientID).First(&client).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
+		}
+
+		// validate code
+		if !client.Code.Valid {
+			return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
+		}
+		if tokenReq.Code != client.Code.String {
+			return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
+		}
+
+		// generate token
+		token := jwt.New(jwt.SigningMethodHS256)
+		claims := token.Claims.(jwt.MapClaims)
+
+		claims["username"] = client.Name
+		claims["user_id"] = client.ID
+		claims["exp"] = time.Now().Add(time.Hour * 5).Unix()
+
+		accessToken, err := token.SignedString([]byte(client.ClientSecret))
+
+		if err != nil {
+			log.Fatal(err.Error())
+			return c.Status(500).JSON(fiber.Map{"error": "error while signing token"})
+		}
+
+		tokenResponse := TokenResponse{
+			AccessToken: accessToken,
+			ExpiresIn:   18000,
+		}
+
+		return c.Status(200).JSON(tokenResponse)
+
 	})
 
 	port := os.Getenv("PORT")
@@ -144,14 +218,16 @@ func main() {
 }
 
 type Client struct {
-	ID          string `gorm:"primaryKey"`
-	Name        string `gorm:"uniqueIndex"`
-	Website     string
-	Logo        string
-	RedirectURI string    `json:"redirect_uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	DeletedAt   time.Time `json:"-" gorm:"index"`
+	ID           string `gorm:"primaryKey"`
+	Name         string `gorm:"uniqueIndex" json:"client_id"`
+	Website      string
+	Logo         string
+	Code         sql.NullString `gorm:"default:null"`
+	RedirectURI  string         `json:"redirect_uri"`
+	ClientSecret string         `json:"-"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    time.Time      `json:"-" gorm:"index"`
 }
 
 type AuthRequest struct {
@@ -166,4 +242,17 @@ type ConfirmAuthRequest struct {
 	Authorize bool   `json:"authorize" query:"authorize"`
 	ClientID  string `json:"client_id" query:"client_id"`
 	State     string
+}
+
+type TokenRequest struct {
+	GrantType    string `json:"grant_type"`
+	Code         string `json:"code"`
+	RedirectURI  string `json:"redirect_uri"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+}
+
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
 }
