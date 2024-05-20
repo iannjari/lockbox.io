@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/favicon"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/template/html/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/lucsky/cuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -33,7 +36,7 @@ func main() {
 		panic("unable to open db: " + err.Error())
 	}
 
-	db.AutoMigrate(&Client{})
+	db.AutoMigrate(&Client{}, &User{})
 
 	// generate code
 	clientSecret, err := cuid.NewCrypto(rand.Reader)
@@ -46,7 +49,7 @@ func main() {
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"name", "website", "redirect_uri", "logo", "client_secret"}),
 	}).Create(&Client{
-		ID:           "1",
+		ID:           uuid.New(),
 		Name:         "client_1",
 		Website:      "https://example.com",
 		Logo:         "https://1000logos.net/wp-content/uploads/2016/11/New-Google-Logo.jpg",
@@ -64,6 +67,10 @@ func main() {
 	// middleware
 	api.Use(logger.New())
 	api.Use(recover.New())
+	api.Use(favicon.New(favicon.Config{
+		File: "./media/favicon.ico",
+		URL:  "/favicon.ico",
+	}))
 
 	api.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("hello 💙")
@@ -148,6 +155,45 @@ func main() {
 		return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
 	})
 
+	api.Post("/user", func(c *fiber.Ctx) error {
+		userReq := new(CreateUserRequest)
+		if c.BodyParser(userReq); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+
+		if userReq.FirstName == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid first name"})
+		}
+		if userReq.LastName == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid last name"})
+		}
+		if userReq.Email == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid email"})
+		}
+		if userReq.Password == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid password"})
+		}
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userReq.Password), 14)
+		if err != nil {
+			log.Print(err.Error())
+			return c.Status(400).JSON(fiber.Map{"error": "invalid password"})
+		}
+
+		user := User{
+			ID:        uuid.New(),
+			FirstName: userReq.FirstName,
+			LastName:  userReq.LastName,
+			Email:     userReq.Email,
+			Password:  string(hashedPassword),
+		}
+
+		db.Create(&user)
+
+		return c.Status(200).JSON(fiber.Map{"status": "sucess", "message": "created user", "data": user})
+
+	})
+
 	api.Get("/token", func(c *fiber.Ctx) error {
 		tokenReq := new(TokenRequest)
 		if c.BodyParser(tokenReq); err != nil {
@@ -218,8 +264,8 @@ func main() {
 }
 
 type Client struct {
-	ID           string `gorm:"primaryKey"`
-	Name         string `gorm:"uniqueIndex" json:"client_id"`
+	ID           uuid.UUID `gorm:"primaryKey"`
+	Name         string    `gorm:"uniqueIndex" json:"client_id"`
 	Website      string
 	Logo         string
 	Code         sql.NullString `gorm:"default:null"`
@@ -228,6 +274,24 @@ type Client struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    time.Time      `json:"-" gorm:"index"`
+}
+
+type User struct {
+	ID        uuid.UUID `gorm:"primaryKey" json:"id"`
+	FirstName string    `gorm:"uniqueIndex" json:"first_name"`
+	LastName  string    `gorm:"uniqueIndex" json:"last_name"`
+	Email     string    `gorm:"uniqueIndex" json:"email"`
+	Password  string    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	DeletedAt time.Time `json:"-" gorm:"index"`
+}
+
+type CreateUserRequest struct {
+	FirstName string `gorm:"uniqueIndex" json:"first_name"`
+	LastName  string `gorm:"uniqueIndex" json:"last_name"`
+	Email     string `gorm:"uniqueIndex" json:"email"`
+	Password  string `json:"password"`
 }
 
 type AuthRequest struct {
