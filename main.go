@@ -53,7 +53,7 @@ func main() {
 		Name:         "client_1",
 		Website:      "https://example.com",
 		Logo:         "https://1000logos.net/wp-content/uploads/2016/11/New-Google-Logo.jpg",
-		RedirectURI:  "http://localhost:8000/auth/callback",
+		RedirectURI:  "https://google.com",
 		ClientSecret: clientSecret,
 	})
 
@@ -139,18 +139,44 @@ func main() {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 		}
 
+		if authConfirmReq.Identity == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid identity"})
+		}
+		if authConfirmReq.ClientID == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "client id"})
+		}
+		if authConfirmReq.Password == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "inavlid password"})
+		}
+		if authConfirmReq.State == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid state"})
+		}
+
 		// verify client exists
 		client := new(Client)
 		if err := db.Where("name = ?", authConfirmReq.ClientID).First(&client).Error; err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
 		}
 
+		// redirect with access denied
 		if !authConfirmReq.Authorize {
 			return c.Redirect(client.RedirectURI + "?error=access_denied" + "&state=" + authConfirmReq.State)
 		}
 
+		// fetch user
+		user := new(User)
+		if err := db.Where("email = ?", authConfirmReq.Identity).First(&user).Error; err != nil {
+			println(err.Error)
+			return c.Status(404).JSON(fiber.Map{"error": "unkown user"})
+		}
+
+		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(authConfirmReq.Password)); err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "un-authenticated"})
+		}
+
 		// save generated auth code
 		db.Model(&client).Update("code", tempCode)
+		db.Model(&user).Update("code", tempCode)
 
 		return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
 	})
@@ -222,6 +248,12 @@ func main() {
 			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
 		}
 
+		// verify user exists ??
+		user := new(User)
+		if err := db.Where("code = ?", client.Code.String).First(&user).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "unknown user"})
+		}
+
 		// validate code
 		if !client.Code.Valid {
 			return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
@@ -277,14 +309,15 @@ type Client struct {
 }
 
 type User struct {
-	ID        uuid.UUID `gorm:"primaryKey" json:"id"`
-	FirstName string    `gorm:"uniqueIndex" json:"first_name"`
-	LastName  string    `gorm:"uniqueIndex" json:"last_name"`
-	Email     string    `gorm:"uniqueIndex" json:"email"`
-	Password  string    `json:"-"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	DeletedAt time.Time `json:"-" gorm:"index"`
+	ID        uuid.UUID      `gorm:"primaryKey" json:"id"`
+	FirstName string         `gorm:"uniqueIndex" json:"first_name"`
+	LastName  string         `gorm:"uniqueIndex" json:"last_name"`
+	Email     string         `gorm:"uniqueIndex" json:"email"`
+	Password  string         `json:"-"`
+	Code      sql.NullString `gorm:"default:null"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt time.Time      `json:"-" gorm:"index"`
 }
 
 type CreateUserRequest struct {
@@ -303,6 +336,8 @@ type AuthRequest struct {
 }
 
 type ConfirmAuthRequest struct {
+	Identity  string `json:"identity"`
+	Password  string `json:"password"`
 	Authorize bool   `json:"authorize" query:"authorize"`
 	ClientID  string `json:"client_id" query:"client_id"`
 	State     string
