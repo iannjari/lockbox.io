@@ -64,11 +64,13 @@ func main() {
 		Views:   views,
 	})
 
+	api.Static("/public", "./public")
+
 	// middleware
 	api.Use(logger.New())
 	api.Use(recover.New())
 	api.Use(favicon.New(favicon.Config{
-		File: "./media/favicon.ico",
+		File: "./public/favicon.ico",
 		URL:  "/favicon.ico",
 	}))
 

@@ -1,30 +1,23 @@
 <!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" type="text/css" href="/public/style.css">
+</head>
 <body>
-    <h1>{{.Name}}</h1>
-    <img width="100" src="{{.Logo}}" />
-    <p> An application, {{.Website}}, is requesting access to your account with the following scopes:
-
-    </p>
-    <ul>
-        {{range $scope := .Scopes}}
-        <li>
-            {{$scope}}
-        </li>
-        {{end}}
-    </ul>
-    <p>
-        Allow access?
-    </p>
-    <form action="confirm_auth">
-        <label for="identity">Identity</label>
-        <input type="text" name="identity">
-        <label for="password">Password</label>
-        <input type="password" name="password">
-        <button type="submit" name="authorize" value="true">Authorize</button>
-        <button type="submit" name="authorize" value="false">Deny</button>
-        <input type="hidden" name="client_id" value="{{.Name}}"/>
-        <input type="hidden" name="state" value="{{.State}}"/>
-    </form>
-
+    <div class="card">
+        <h1>Login</h1>
+        <img width="100" src="/public/logo.png" />
+        
+        <form action="confirm_auth">
+            <label for="identity">Username/Email</label>
+            <input type="text" name="identity">
+            <label for="password">Password</label>
+            <input type="password" name="password">
+            <button type="submit" name="authorize" class="authorize" value="true">Authorize</button>
+            <button type="submit" name="authorize" class="deny" value="false">Deny</button>
+            <input type="hidden" name="client_id" value="{{.Name}}"/>
+            <input type="hidden" name="state" value="{{.State}}"/>
+        </form>
+    </div>
 </body>
 </html>
