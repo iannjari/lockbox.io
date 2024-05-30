@@ -2,26 +2,22 @@ package main
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"fmt"
-	"log"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/template/html/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/lucsky/cuid"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"lockbox.io/handler"
+	"lockbox.io/model"
 )
 
 func main() {
@@ -36,7 +32,7 @@ func main() {
 		panic("unable to open db: " + err.Error())
 	}
 
-	db.AutoMigrate(&Client{}, &User{})
+	db.AutoMigrate(&model.Client{}, &model.User{})
 
 	// generate code
 	clientSecret, err := cuid.NewCrypto(rand.Reader)
@@ -48,7 +44,7 @@ func main() {
 	db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"name", "website", "redirect_uri", "logo", "client_secret"}),
-	}).Create(&Client{
+	}).Create(&model.Client{
 		ID:           uuid.New(),
 		Name:         "client_1",
 		Website:      "https://example.com",
@@ -74,218 +70,12 @@ func main() {
 		URL:  "/favicon.ico",
 	}))
 
-	api.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("hello 💙")
-	})
-	api.Get("/auth", func(c *fiber.Ctx) error {
-		authRequest := new(AuthRequest)
-		if c.QueryParser(authRequest); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
-		}
-
-		if authRequest.ResponseType != "code" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid response type"})
-		}
-		if !strings.Contains(authRequest.RedirectURI, "https://") {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid redirect uri"})
-		}
-		if authRequest.ClientID == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid client id"})
-		}
-		if authRequest.Scope == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid scope"})
-		}
-		if authRequest.State == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid state"})
-		}
-
-		// verify client exists
-		client := new(Client)
-		if err := db.Where("name = ?", authRequest.ClientID).First(&client).Error; err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "unknown client"})
-		}
-
-		// generate code
-		code, err := cuid.NewCrypto(rand.Reader)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
-		}
-
-		c.Cookie(&fiber.Cookie{
-			Name:     "temp_auth_request_code",
-			Value:    code,
-			Secure:   true,
-			Expires:  time.Now().Add(2 * time.Minute),
-			HTTPOnly: true,
-		})
-
-		return c.Render("authorize_page", fiber.Map{
-			"Logo":    client.Logo,
-			"Name":    client.Name,
-			"Website": client.Website,
-			"State":   authRequest.State,
-			"Scopes":  strings.Split(authRequest.Scope, " "),
-		})
-
-	})
-
-	api.Get("/confirm_auth", func(c *fiber.Ctx) error {
-		tempCode := c.Cookies("temp_auth_request_code")
-		if tempCode == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid temp auth code"})
-		}
-		c.ClearCookie("temp_auth_request_code")
-
-		authConfirmReq := new(ConfirmAuthRequest)
-		if c.QueryParser(authConfirmReq); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
-		}
-
-		if authConfirmReq.Identity == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid identity"})
-		}
-		if authConfirmReq.ClientID == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "client id"})
-		}
-		if authConfirmReq.Password == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "inavlid password"})
-		}
-		if authConfirmReq.State == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid state"})
-		}
-
-		// verify client exists
-		client := new(Client)
-		if err := db.Where("name = ?", authConfirmReq.ClientID).First(&client).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
-		}
-
-		// redirect with access denied
-		if !authConfirmReq.Authorize {
-			return c.Redirect(client.RedirectURI + "?error=access_denied" + "&state=" + authConfirmReq.State)
-		}
-
-		// fetch user
-		user := new(User)
-		if err := db.Where("email = ?", authConfirmReq.Identity).First(&user).Error; err != nil {
-			println(err.Error)
-			return c.Status(404).JSON(fiber.Map{"error": "unkown user"})
-		}
-
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(authConfirmReq.Password)); err != nil {
-			return c.Status(401).JSON(fiber.Map{"error": "un-authenticated"})
-		}
-
-		// save generated auth code
-		db.Model(&user).Update("code", tempCode)
-
-		return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
-	})
-
-	api.Post("/user", func(c *fiber.Ctx) error {
-		userReq := new(CreateUserRequest)
-		if c.BodyParser(userReq); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
-		}
-
-		if userReq.FirstName == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid first name"})
-		}
-		if userReq.LastName == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid last name"})
-		}
-		if userReq.Email == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid email"})
-		}
-		if userReq.Password == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid password"})
-		}
-
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userReq.Password), 14)
-		if err != nil {
-			log.Print(err.Error())
-			return c.Status(400).JSON(fiber.Map{"error": "invalid password"})
-		}
-
-		user := User{
-			ID:        uuid.New(),
-			FirstName: userReq.FirstName,
-			LastName:  userReq.LastName,
-			Email:     userReq.Email,
-			Password:  string(hashedPassword),
-		}
-
-		db.Create(&user)
-
-		return c.Status(200).JSON(fiber.Map{"status": "sucess", "message": "created user", "data": user})
-
-	})
-
-	api.Get("/token", func(c *fiber.Ctx) error {
-		tokenReq := new(TokenRequest)
-		if c.BodyParser(tokenReq); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
-		}
-
-		if !strings.Contains(tokenReq.RedirectURI, "https://") {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid redirect uri"})
-		}
-		if tokenReq.ClientID == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid client id"})
-		}
-		if tokenReq.ClientSecret == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid client secret"})
-		}
-		if tokenReq.GrantType == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid grant type"})
-		}
-		if tokenReq.Code == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid code"})
-		}
-
-		// verify client exists
-		client := new(Client)
-		if err := db.Where("name = ?", tokenReq.ClientID).First(&client).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
-		}
-
-		// verify user exists
-		user := new(User)
-		if err := db.Where("code = ?", client.Code.String).First(&user).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "unknown user"})
-		}
-
-		// validate code
-		if !client.Code.Valid {
-			return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
-		}
-		if tokenReq.Code != client.Code.String {
-			return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
-		}
-
-		// generate token
-		token := jwt.New(jwt.SigningMethodHS256)
-		claims := token.Claims.(jwt.MapClaims)
-
-		claims["username"] = client.Name
-		claims["user_id"] = client.ID
-		claims["exp"] = time.Now().Add(time.Hour * 5).Unix()
-
-		accessToken, err := token.SignedString([]byte(client.ClientSecret))
-
-		if err != nil {
-			log.Fatal(err.Error())
-			return c.Status(500).JSON(fiber.Map{"error": "error while signing token"})
-		}
-
-		tokenResponse := TokenResponse{
-			AccessToken: accessToken,
-			ExpiresIn:   18000,
-		}
-
-		return c.Status(200).JSON(tokenResponse)
-
-	})
+	// register routes + handlers
+	api.Get("/", handler.Hello)
+	api.Get("/auth", handler.Login)
+	api.Get("/confirm_auth", handler.ConfirmAuth)
+	api.Post("/user", handler.RegisterUser)
+	api.Get("/token", handler.GetToken)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -294,65 +84,4 @@ func main() {
 
 	api.Listen(fmt.Sprintf("localhost:%s", port))
 
-}
-
-type Client struct {
-	ID           uuid.UUID `gorm:"primaryKey"`
-	Name         string    `gorm:"uniqueIndex" json:"client_id"`
-	Website      string
-	Logo         string
-	Code         sql.NullString `gorm:"default:null"`
-	RedirectURI  string         `json:"redirect_uri"`
-	ClientSecret string         `json:"-"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    time.Time      `json:"-" gorm:"index"`
-}
-
-type User struct {
-	ID        uuid.UUID      `gorm:"primaryKey" json:"id"`
-	FirstName string         `gorm:"uniqueIndex" json:"first_name"`
-	LastName  string         `gorm:"uniqueIndex" json:"last_name"`
-	Email     string         `gorm:"uniqueIndex" json:"email"`
-	Password  string         `json:"-"`
-	Code      sql.NullString `gorm:"default:null"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt time.Time      `json:"-" gorm:"index"`
-}
-
-type CreateUserRequest struct {
-	FirstName string `gorm:"uniqueIndex" json:"first_name"`
-	LastName  string `gorm:"uniqueIndex" json:"last_name"`
-	Email     string `gorm:"uniqueIndex" json:"email"`
-	Password  string `json:"password"`
-}
-
-type AuthRequest struct {
-	ResponseType string `json:"response_type" query:"response_type"`
-	ClientID     string `json:"client_id" query:"client_id"`
-	RedirectURI  string `json:"redirect_uri" query:"redirect_uri"`
-	Scope        string
-	State        string
-}
-
-type ConfirmAuthRequest struct {
-	Identity  string `json:"identity"`
-	Password  string `json:"password"`
-	Authorize bool   `json:"authorize" query:"authorize"`
-	ClientID  string `json:"client_id" query:"client_id"`
-	State     string
-}
-
-type TokenRequest struct {
-	GrantType    string `json:"grant_type"`
-	Code         string `json:"code"`
-	RedirectURI  string `json:"redirect_uri"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-}
-
-type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int    `json:"expires_in"`
 }
