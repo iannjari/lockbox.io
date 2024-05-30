@@ -175,7 +175,6 @@ func main() {
 		}
 
 		// save generated auth code
-		db.Model(&client).Update("code", tempCode)
 		db.Model(&user).Update("code", tempCode)
 
 		return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
@@ -248,7 +247,7 @@ func main() {
 			return c.Status(404).JSON(fiber.Map{"error": "unknown client"})
 		}
 
-		// verify user exists ??
+		// verify user exists
 		user := new(User)
 		if err := db.Where("code = ?", client.Code.String).First(&user).Error; err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "unknown user"})
