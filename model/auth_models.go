@@ -16,11 +16,12 @@ type AuthRequest struct {
 }
 
 type ConfirmAuthRequest struct {
-	Identity  string `json:"identity"`
-	Password  string `json:"password"`
-	Authorize bool   `json:"authorize" query:"authorize"`
-	ClientID  string `json:"client_id" query:"client_id"`
-	State     string
+	Identity          string `json:"identity"`
+	Password          string `json:"password"`
+	Authorize         bool   `json:"authorize" query:"authorize"`
+	ClientID          string `json:"client_id" query:"client_id"`
+	ClientRedirectURI string `json:"redirect_uri" query:"redirect_uri"`
+	State             string
 }
 
 type TokenRequest struct {
@@ -47,4 +48,9 @@ type Client struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    time.Time      `json:"-" gorm:"index"`
+}
+
+type RedirectOrLoginRequest struct {
+	ClientRedirectURI string `json:"redirect_uri" query:"redirect_uri"`
+	State             string `json:"state" query:"state"`
 }

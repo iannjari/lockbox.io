@@ -67,13 +67,26 @@ func Login(c *fiber.Ctx) error {
 	})
 
 	return c.Render("authorize_page", fiber.Map{
-		"Logo":    client.Logo,
-		"Name":    client.Name,
-		"Website": client.Website,
-		"State":   authRequest.State,
-		"Scopes":  strings.Split(authRequest.Scope, " "),
+		"RedirectURI": authRequest.RedirectURI,
+		"Name":        client.Name,
+		"Website":     client.Website,
+		"State":       authRequest.State,
+		"Scopes":      strings.Split(authRequest.Scope, " "),
 	})
 
+}
+
+func RedirectOrLogin(c *fiber.Ctx) error {
+	// currently, just redirect
+	redirectReq := new(model.RedirectOrLoginRequest)
+	if err := c.QueryParser(redirectReq); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if redirectReq.ClientRedirectURI == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	return c.Redirect(redirectReq.ClientRedirectURI + "?error=access_denied" + "&state=" + redirectReq.State)
 }
 
 func ConfirmAuth(c *fiber.Ctx) error {
@@ -92,17 +105,11 @@ func ConfirmAuth(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
-	if authConfirmReq.Identity == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid identity"})
-	}
-	if authConfirmReq.ClientID == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "client id"})
-	}
-	if authConfirmReq.Password == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "inavlid password"})
-	}
-	if authConfirmReq.State == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid state"})
+	if authConfirmReq.Identity == "" || authConfirmReq.ClientID == "" || authConfirmReq.Password == "" {
+		return c.Render("invalid_creds", fiber.Map{
+			"RedirectURI": authConfirmReq.ClientRedirectURI,
+			"State":       authConfirmReq.State,
+		})
 	}
 
 	// verify client exists
@@ -124,7 +131,10 @@ func ConfirmAuth(c *fiber.Ctx) error {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(authConfirmReq.Password)); err != nil {
-		return c.Status(401).JSON(fiber.Map{"error": "un-authenticated"})
+		return c.Render("invalid_creds", fiber.Map{
+			"RedirectURI": authConfirmReq.ClientRedirectURI,
+			"State":       authConfirmReq.State,
+		})
 	}
 
 	// save generated auth code

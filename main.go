@@ -76,6 +76,7 @@ func main() {
 	api.Get("/confirm_auth", handler.ConfirmAuth)
 	api.Post("/user", handler.RegisterUser)
 	api.Get("/token", handler.GetToken)
+	api.Get("/redirect", handler.RedirectOrLogin)
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" type="text/css" href="/public/style.css">
+</head>
+<body>
+    <div class="card">
+        <h1>Invalid Username/email or Password!</h1>
+        <img width="100" src="/public/logo.png" />
+        
+        <form action="redirect">
+            <button type="submit" name="ok" class="ok" value="true">Ok</button>
+            <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}"/>
+            <input type="hidden" name="state" value="{{.State}}"/>
+        </form>
+    </div>
+</body>
+</html>
