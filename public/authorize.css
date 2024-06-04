@@ -5,7 +5,7 @@ body {
     height: 100vh;
     margin: 0;
     font-family: Arial, sans-serif;
-    background-color: #f0f0f0;
+    background-color: rgb(139, 161, 139);
 }
 .card {
     background-color: #ffffff;
@@ -59,9 +59,9 @@ body {
 }
 .authorize {
     background-color: #4caf50;
-    color: white;
+    color: black;
 }
 .deny {
     background-color: #ff776d;
-    color: white;
+    color: black;
 }

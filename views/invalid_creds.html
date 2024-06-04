@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <link rel="stylesheet" type="text/css" href="/public/style.css">
+    <link rel="stylesheet" type="text/css" href="/public/invalid_creds.css">
 </head>
 <body>
     <div class="card">
-        <h1>Invalid Username/email or Password!</h1>
+        <h1>Invalid username/email or password!</h1>
         <img width="100" src="/public/logo.png" />
         
         <form action="redirect">
-            <button type="submit" name="ok" class="ok" value="true">Ok</button>
+            <button type="submit" name="redirect_to_origin" class="yes" value="true">Ok, I'll come back another time 🫠</button>
+            <button type="submit" name="redirect_to_origin" class="no" value="false">Ok, I'll retry 🤗</button>
             <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}"/>
             <input type="hidden" name="state" value="{{.State}}"/>
+            <input type="hidden" name="entry_point" value="{{.EntryPoint}}"/>
         </form>
     </div>
 </body>

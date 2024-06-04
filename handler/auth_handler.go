@@ -72,6 +72,7 @@ func Login(c *fiber.Ctx) error {
 		"Website":     client.Website,
 		"State":       authRequest.State,
 		"Scopes":      strings.Split(authRequest.Scope, " "),
+		"EntryPoint":  c.OriginalURL(),
 	})
 
 }
@@ -85,8 +86,15 @@ func RedirectOrLogin(c *fiber.Ctx) error {
 	if redirectReq.ClientRedirectURI == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
+	if redirectReq.EntryPoint == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
 
-	return c.Redirect(redirectReq.ClientRedirectURI + "?error=access_denied" + "&state=" + redirectReq.State)
+	if redirectReq.RedirectToOrigin {
+		return c.Redirect(redirectReq.ClientRedirectURI + "?error=access_denied" + "&state=" + redirectReq.State)
+	} else {
+		return c.Redirect(redirectReq.EntryPoint)
+	}
 }
 
 func ConfirmAuth(c *fiber.Ctx) error {
@@ -109,6 +117,7 @@ func ConfirmAuth(c *fiber.Ctx) error {
 		return c.Render("invalid_creds", fiber.Map{
 			"RedirectURI": authConfirmReq.ClientRedirectURI,
 			"State":       authConfirmReq.State,
+			"EntryPoint":  authConfirmReq.EntryPoint,
 		})
 	}
 
@@ -134,6 +143,7 @@ func ConfirmAuth(c *fiber.Ctx) error {
 		return c.Render("invalid_creds", fiber.Map{
 			"RedirectURI": authConfirmReq.ClientRedirectURI,
 			"State":       authConfirmReq.State,
+			"EntryPoint":  authConfirmReq.EntryPoint,
 		})
 	}
 
@@ -210,5 +220,4 @@ func GetToken(c *fiber.Ctx) error {
 	}
 
 	return c.Status(200).JSON(tokenResponse)
-
 }

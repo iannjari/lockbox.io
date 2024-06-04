@@ -21,6 +21,7 @@ type ConfirmAuthRequest struct {
 	Authorize         bool   `json:"authorize" query:"authorize"`
 	ClientID          string `json:"client_id" query:"client_id"`
 	ClientRedirectURI string `json:"redirect_uri" query:"redirect_uri"`
+	EntryPoint        string `json:"entry_point" query:"entry_point"`
 	State             string
 }
 
@@ -53,4 +54,6 @@ type Client struct {
 type RedirectOrLoginRequest struct {
 	ClientRedirectURI string `json:"redirect_uri" query:"redirect_uri"`
 	State             string `json:"state" query:"state"`
+	EntryPoint        string `json:"entry_point" query:"entry_point"`
+	RedirectToOrigin  bool   `json:"redirect_to_origin" query:"redirect_to_origin"`
 }
