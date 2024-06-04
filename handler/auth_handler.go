@@ -150,7 +150,7 @@ func ConfirmAuth(c *fiber.Ctx) error {
 	// save generated auth code
 	db.Model(&user).Update("code", tempCode)
 
-	return c.Redirect(client.RedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
+	return c.Redirect(authConfirmReq.ClientRedirectURI + "?code=" + tempCode + "&state=" + authConfirmReq.State)
 }
 
 func GetToken(c *fiber.Ctx) error {

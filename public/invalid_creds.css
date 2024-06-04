@@ -48,3 +48,7 @@ body {
     background-color: #c2fbd7;
     color: black;
 }
+
+.invalid_creds {
+    color: rgb(235, 34, 85);
+}
