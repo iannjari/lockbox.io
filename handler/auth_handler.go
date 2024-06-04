@@ -129,7 +129,7 @@ func ConfirmAuth(c *fiber.Ctx) error {
 
 	// redirect with access denied
 	if !authConfirmReq.Authorize {
-		return c.Redirect(client.RedirectURI + "?error=access_denied" + "&state=" + authConfirmReq.State)
+		return c.Redirect(authConfirmReq.ClientRedirectURI + "?error=access_denied" + "&state=" + authConfirmReq.State)
 	}
 
 	// fetch user
