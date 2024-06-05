@@ -2,7 +2,6 @@ package handler
 
 import (
 	"crypto/rand"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -234,15 +233,12 @@ func GetToken(c *fiber.Ctx) error {
 
 	// verify user exists
 	user := new(model.User)
-	if err := db.Where("code = ?", client.Code.String).First(&user).Error; err != nil {
+	if err := db.Where("code = ?", tokenReq.Code).First(&user).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "unknown user"})
 	}
 
 	// validate code
-	if !client.Code.Valid {
-		return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
-	}
-	if tokenReq.Code != client.Code.String {
+	if tokenReq.Code != user.Code.String {
 		return c.Status(500).JSON(fiber.Map{"error": "invalid code"})
 	}
 
@@ -250,20 +246,26 @@ func GetToken(c *fiber.Ctx) error {
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
 
-	claims["username"] = client.Name
-	claims["user_id"] = client.ID
+	claims["type"] = "Bearer"
+	claims["iss"] = c.BaseURL()
+	claims["iat"] = time.Now().Unix()
 	claims["exp"] = time.Now().Add(time.Hour * 5).Unix()
+	claims["sub"] = user.ID
+	claims["username"] = user.LastName + " " + user.FirstName
+	claims["identity"] = user.Email
+	claims["azp"] = "frontend"
+	claims["entity_roles"] = user
 
 	accessToken, err := token.SignedString([]byte(client.ClientSecret))
 
 	if err != nil {
-		log.Fatal(err.Error())
 		return c.Status(500).JSON(fiber.Map{"error": "error while signing token"})
 	}
 
 	tokenResponse := model.TokenResponse{
 		AccessToken: accessToken,
 		ExpiresIn:   18000,
+		TokenType:   "Bearer",
 	}
 
 	return c.Status(200).JSON(tokenResponse)

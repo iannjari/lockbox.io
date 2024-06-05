@@ -36,6 +36,7 @@ type TokenRequest struct {
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int    `json:"expires_in"`
+	TokenType   string `json:"token_type"`
 }
 
 type Client struct {
@@ -43,7 +44,7 @@ type Client struct {
 	Name         string    `gorm:"uniqueIndex" json:"client_id"`
 	Website      string
 	Logo         string
-	Code         sql.NullString `gorm:"default:null"`
+	Code         sql.NullString `gorm:"default:null" json:"-"`
 	RedirectURI  string         `json:"redirect_uri"`
 	ClientSecret string         `json:"-"`
 	CreatedAt    time.Time      `json:"created_at"`
@@ -56,4 +57,10 @@ type RedirectOrLoginRequest struct {
 	State             string `json:"state" query:"state"`
 	EntryPoint        string `json:"entry_point" query:"entry_point"`
 	RedirectToOrigin  bool   `json:"redirect_to_origin" query:"redirect_to_origin"`
+}
+
+type GetClientTokenRequest struct {
+	ClientId     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	GrantType    string `json:"grant_type"`
 }

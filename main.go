@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/gofiber/fiber/v2"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/lucsky/cuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -39,10 +41,15 @@ func main() {
 	if err != nil {
 		panic("internal server error generating example client id")
 	}
+	log.Println("secret: " + clientSecret)
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(clientSecret), 14)
+	if err != nil {
+		panic("error hashing secret")
+	}
 
 	// seed with dummy data
 	db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "id"}},
+		Columns:   []clause.Column{{Name: "name"}},
 		DoUpdates: clause.AssignmentColumns([]string{"name", "website", "redirect_uri", "logo", "client_secret"}),
 	}).Create(&model.Client{
 		ID:           uuid.New(),
@@ -50,7 +57,7 @@ func main() {
 		Website:      "https://example.com",
 		Logo:         "https://1000logos.net/wp-content/uploads/2016/11/New-Google-Logo.jpg",
 		RedirectURI:  "https://google.com",
-		ClientSecret: clientSecret,
+		ClientSecret: string(hashedSecret),
 	})
 
 	views := html.New("./views", ".html")
@@ -77,6 +84,7 @@ func main() {
 	api.Post("/user", handler.RegisterUser)
 	api.Get("/token", handler.GetToken)
 	api.Get("/redirect", handler.RedirectOrLogin)
+	api.Post("/token", handler.GetClientToken)
 
 	port := os.Getenv("PORT")
 	if port == "" {

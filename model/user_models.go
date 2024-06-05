@@ -13,7 +13,7 @@ type User struct {
 	LastName  string         `gorm:"uniqueIndex" json:"last_name"`
 	Email     string         `gorm:"uniqueIndex" json:"email"`
 	Password  string         `json:"-"`
-	Code      sql.NullString `gorm:"default:null"`
+	Code      sql.NullString `json:"-" gorm:"default:null"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt time.Time      `json:"-" gorm:"index"`
