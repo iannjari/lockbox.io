@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" type="text/css" href="/public/invalid_creds.css">
+</head>
+<body>
+    <div class="card">
+        <p class="invalid_creds">An internal error just occured, it's not you, it's us. Kindly try again.</p>
+        <p class="invalid_creds">Error code:  {{.ErrorCode}}</p>
+        
+        <input type="hidden" name="error_code" value="{{.ErrorCode}}"/>
+    </div>
+</body>
+</html>
